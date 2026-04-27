@@ -6657,6 +6657,7 @@ module.exports = {
       body: `module.exports = { id: "conversation-hooks", register(api) {
   api.on("llm_input", () => undefined);
   api.on("llm_output", () => undefined);
+  api.on("llm_message_end", () => undefined);
   api.on("before_agent_finalize", () => undefined);
   api.on("agent_end", () => undefined);
 } };`,
@@ -6675,7 +6676,7 @@ module.exports = {
         "non-bundled plugins must set plugins.entries.conversation-hooks.hooks.allowConversationAccess=true",
       ),
     );
-    expect(blockedDiagnostics).toHaveLength(4);
+    expect(blockedDiagnostics).toHaveLength(5);
   });
 
   it("allows conversation typed hooks for non-bundled plugins when explicitly enabled", () => {
@@ -6686,6 +6687,7 @@ module.exports = {
       body: `module.exports = { id: "conversation-hooks-allowed", register(api) {
   api.on("llm_input", () => undefined);
   api.on("llm_output", () => undefined);
+  api.on("llm_message_end", () => undefined);
   api.on("before_agent_finalize", () => undefined);
   api.on("agent_end", () => undefined);
 } };`,
@@ -6708,6 +6710,7 @@ module.exports = {
     expect(registry.typedHooks.map((entry) => entry.hookName)).toEqual([
       "llm_input",
       "llm_output",
+      "llm_message_end",
       "before_agent_finalize",
       "agent_end",
     ]);
