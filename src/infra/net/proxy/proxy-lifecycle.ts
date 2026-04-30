@@ -14,6 +14,13 @@ import type { ProxyConfig } from "../../../config/zod-schema.proxy.js";
 import { logInfo, logWarn } from "../../../logger.js";
 import { isLoopbackIpAddress } from "../../../shared/net/ip.js";
 import { forceResetGlobalDispatcher } from "../undici-global-dispatcher.js";
+import {
+  findTopActiveManagedProxyRegistration,
+  pruneStoppedManagedProxyRegistrations,
+  registerActiveManagedProxyUrl,
+  stopActiveManagedProxyRegistration,
+  type ActiveManagedProxyRegistration,
+} from "./active-proxy-state.js";
 
 export type ProxyHandle = {
   /** The operator-managed proxy URL injected into process.env. */
@@ -63,20 +70,13 @@ type NodeHttpStackSnapshot = {
   hadGlobalAgent: boolean;
   globalAgent: unknown;
 };
-type ActiveProxyRegistration = {
-  proxyUrl: string;
-  stopped: boolean;
-};
-
 let globalAgentBootstrapped = false;
 let nodeHttpStackSnapshot: NodeHttpStackSnapshot | null = null;
-let activeProxyRegistrations: ActiveProxyRegistration[] = [];
 let baseProxyEnvSnapshot: ProxyEnvSnapshot | null = null;
 
 export function _resetGlobalAgentBootstrapForTests(): void {
   globalAgentBootstrapped = false;
   nodeHttpStackSnapshot = null;
-  activeProxyRegistrations = [];
   baseProxyEnvSnapshot = null;
 }
 
@@ -226,16 +226,6 @@ function bootstrapNodeHttpStack(proxyUrl: string): void {
   }
 }
 
-function findTopActiveProxyRegistration(): ActiveProxyRegistration | null {
-  for (let index = activeProxyRegistrations.length - 1; index >= 0; index -= 1) {
-    const registration = activeProxyRegistrations[index];
-    if (!registration.stopped) {
-      return registration;
-    }
-  }
-  return null;
-}
-
 function resetUndiciDispatcherForProxyLifecycle(): void {
   try {
     forceResetGlobalDispatcher();
@@ -278,7 +268,7 @@ function restoreInactiveProxyRuntime(snapshot: ProxyEnvSnapshot): void {
 }
 
 function restoreAfterFailedProxyActivation(
-  previousActiveRegistration: ActiveProxyRegistration | null,
+  previousActiveRegistration: ActiveManagedProxyRegistration | null,
   restoreSnapshot: ProxyEnvSnapshot,
 ): void {
   if (previousActiveRegistration) {
@@ -289,14 +279,14 @@ function restoreAfterFailedProxyActivation(
   baseProxyEnvSnapshot = null;
 }
 
-function stopActiveProxyRegistration(registration: ActiveProxyRegistration): void {
+function stopActiveProxyRegistration(registration: ActiveManagedProxyRegistration): void {
   if (registration.stopped) {
     return;
   }
-  registration.stopped = true;
-  activeProxyRegistrations = activeProxyRegistrations.filter((entry) => !entry.stopped);
+  stopActiveManagedProxyRegistration(registration);
+  pruneStoppedManagedProxyRegistrations();
 
-  const nextActiveRegistration = findTopActiveProxyRegistration();
+  const nextActiveRegistration = findTopActiveManagedProxyRegistration();
   if (nextActiveRegistration) {
     reapplyActiveProxyRuntime(nextActiveRegistration.proxyUrl);
     return;
@@ -348,21 +338,17 @@ export async function startProxy(config: ProxyConfig | undefined): Promise<Proxy
   }
 
   const proxyUrl = resolveProxyUrl(config);
-  const previousActiveRegistration = findTopActiveProxyRegistration();
+  const previousActiveRegistration = findTopActiveManagedProxyRegistration();
   baseProxyEnvSnapshot ??= captureProxyEnv();
   const lifecycleBaseEnvSnapshot = baseProxyEnvSnapshot;
   let injectedEnvSnapshot = captureProxyEnv();
-  let registration: ActiveProxyRegistration | null = null;
+  let registration: ActiveManagedProxyRegistration | null = null;
 
   try {
     injectedEnvSnapshot = injectProxyEnv(proxyUrl);
     forceResetGlobalDispatcher();
     bootstrapNodeHttpStack(proxyUrl);
-    registration = {
-      proxyUrl,
-      stopped: false,
-    };
-    activeProxyRegistrations.push(registration);
+    registration = registerActiveManagedProxyUrl(proxyUrl);
   } catch (err) {
     restoreAfterFailedProxyActivation(previousActiveRegistration, lifecycleBaseEnvSnapshot);
     throw new Error(`proxy: failed to activate external proxy routing: ${String(err)}`, {
