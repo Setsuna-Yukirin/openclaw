@@ -3,42 +3,46 @@ export type ActiveManagedProxyRegistration = {
   stopped: boolean;
 };
 
-const activeProxyRegistrations: ActiveManagedProxyRegistration[] = [];
+let activeProxyUrl: string | undefined;
+let activeProxyHandleCount = 0;
 
 export function registerActiveManagedProxyUrl(proxyUrl: string): ActiveManagedProxyRegistration {
-  const registration = { proxyUrl, stopped: false };
-  activeProxyRegistrations.push(registration);
-  return registration;
+  if (activeProxyUrl !== undefined && activeProxyUrl !== proxyUrl) {
+    throw new Error(
+      "proxy: cannot activate a different managed proxy while another proxy is active; " +
+        "stop the current proxy before changing proxy.proxyUrl.",
+    );
+  }
+
+  activeProxyUrl = proxyUrl;
+  activeProxyHandleCount += 1;
+  return { proxyUrl, stopped: false };
 }
 
 export function stopActiveManagedProxyRegistration(
   registration: ActiveManagedProxyRegistration,
 ): void {
+  if (registration.stopped) {
+    return;
+  }
   registration.stopped = true;
+  if (activeProxyHandleCount > 0) {
+    activeProxyHandleCount -= 1;
+  }
+  if (activeProxyHandleCount === 0) {
+    activeProxyUrl = undefined;
+  }
 }
 
-export function findTopActiveManagedProxyRegistration(): ActiveManagedProxyRegistration | null {
-  for (let index = activeProxyRegistrations.length - 1; index >= 0; index -= 1) {
-    const registration = activeProxyRegistrations[index];
-    if (!registration.stopped) {
-      return registration;
-    }
-  }
-  return null;
-}
-
-export function pruneStoppedManagedProxyRegistrations(): void {
-  for (let index = activeProxyRegistrations.length - 1; index >= 0; index -= 1) {
-    if (activeProxyRegistrations[index]?.stopped) {
-      activeProxyRegistrations.splice(index, 1);
-    }
-  }
+export function hasActiveManagedProxyHandles(): boolean {
+  return activeProxyHandleCount > 0;
 }
 
 export function getActiveManagedProxyUrl(): string | undefined {
-  return findTopActiveManagedProxyRegistration()?.proxyUrl;
+  return activeProxyUrl;
 }
 
 export function _resetActiveManagedProxyStateForTests(): void {
-  activeProxyRegistrations.splice(0, activeProxyRegistrations.length);
+  activeProxyUrl = undefined;
+  activeProxyHandleCount = 0;
 }

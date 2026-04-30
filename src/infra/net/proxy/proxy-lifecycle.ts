@@ -15,8 +15,7 @@ import { logInfo, logWarn } from "../../../logger.js";
 import { isLoopbackIpAddress } from "../../../shared/net/ip.js";
 import { forceResetGlobalDispatcher } from "../undici-global-dispatcher.js";
 import {
-  findTopActiveManagedProxyRegistration,
-  pruneStoppedManagedProxyRegistrations,
+  getActiveManagedProxyUrl,
   registerActiveManagedProxyUrl,
   stopActiveManagedProxyRegistration,
   type ActiveManagedProxyRegistration,
@@ -268,11 +267,11 @@ function restoreInactiveProxyRuntime(snapshot: ProxyEnvSnapshot): void {
 }
 
 function restoreAfterFailedProxyActivation(
-  previousActiveRegistration: ActiveManagedProxyRegistration | null,
+  previousActiveProxyUrl: string | undefined,
   restoreSnapshot: ProxyEnvSnapshot,
 ): void {
-  if (previousActiveRegistration) {
-    reapplyActiveProxyRuntime(previousActiveRegistration.proxyUrl);
+  if (previousActiveProxyUrl) {
+    reapplyActiveProxyRuntime(previousActiveProxyUrl);
     return;
   }
   restoreInactiveProxyRuntime(restoreSnapshot);
@@ -284,11 +283,10 @@ function stopActiveProxyRegistration(registration: ActiveManagedProxyRegistratio
     return;
   }
   stopActiveManagedProxyRegistration(registration);
-  pruneStoppedManagedProxyRegistrations();
 
-  const nextActiveRegistration = findTopActiveManagedProxyRegistration();
-  if (nextActiveRegistration) {
-    reapplyActiveProxyRuntime(nextActiveRegistration.proxyUrl);
+  const nextActiveProxyUrl = getActiveManagedProxyUrl();
+  if (nextActiveProxyUrl) {
+    reapplyActiveProxyRuntime(nextActiveProxyUrl);
     return;
   }
 
@@ -338,13 +336,7 @@ export async function startProxy(config: ProxyConfig | undefined): Promise<Proxy
   }
 
   const proxyUrl = resolveProxyUrl(config);
-  const previousActiveRegistration = findTopActiveManagedProxyRegistration();
-  if (previousActiveRegistration && previousActiveRegistration.proxyUrl !== proxyUrl) {
-    throw new Error(
-      "proxy: cannot activate a different managed proxy while another proxy is active; " +
-        "stop the current proxy before changing proxy.proxyUrl.",
-    );
-  }
+  const previousActiveProxyUrl = getActiveManagedProxyUrl();
   baseProxyEnvSnapshot ??= captureProxyEnv();
   const lifecycleBaseEnvSnapshot = baseProxyEnvSnapshot;
   let injectedEnvSnapshot = captureProxyEnv();
@@ -356,7 +348,7 @@ export async function startProxy(config: ProxyConfig | undefined): Promise<Proxy
     bootstrapNodeHttpStack(proxyUrl);
     registration = registerActiveManagedProxyUrl(proxyUrl);
   } catch (err) {
-    restoreAfterFailedProxyActivation(previousActiveRegistration, lifecycleBaseEnvSnapshot);
+    restoreAfterFailedProxyActivation(previousActiveProxyUrl, lifecycleBaseEnvSnapshot);
     throw new Error(`proxy: failed to activate external proxy routing: ${String(err)}`, {
       cause: err,
     });
