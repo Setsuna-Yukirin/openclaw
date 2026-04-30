@@ -339,6 +339,12 @@ export async function startProxy(config: ProxyConfig | undefined): Promise<Proxy
 
   const proxyUrl = resolveProxyUrl(config);
   const previousActiveRegistration = findTopActiveManagedProxyRegistration();
+  if (previousActiveRegistration && previousActiveRegistration.proxyUrl !== proxyUrl) {
+    throw new Error(
+      "proxy: cannot activate a different managed proxy while another proxy is active; " +
+        "stop the current proxy before changing proxy.proxyUrl.",
+    );
+  }
   baseProxyEnvSnapshot ??= captureProxyEnv();
   const lifecycleBaseEnvSnapshot = baseProxyEnvSnapshot;
   let injectedEnvSnapshot = captureProxyEnv();
