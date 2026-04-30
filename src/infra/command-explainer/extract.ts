@@ -1,5 +1,6 @@
 import type { Node as TreeSitterNode } from "web-tree-sitter";
 import { detectInterpreterInlineEvalArgv } from "../exec-inline-eval.js";
+import { normalizeExecutableToken } from "../exec-wrapper-resolution.js";
 import { parseBashForCommandExplanation } from "./tree-sitter-runtime.js";
 import type {
   CommandContext,
@@ -16,10 +17,22 @@ type MutableExplanation = {
   risks: CommandRisk[];
 };
 
+const SHELL_EXECUTABLES = new Set(["bash", "sh", "zsh", "dash"]);
+
+function children(node: TreeSitterNode): TreeSitterNode[] {
+  return Array.from({ length: node.childCount }, (_, index) => node.child(index)).filter(
+    (child): child is TreeSitterNode => child !== null,
+  );
+}
+
 function namedChildren(node: TreeSitterNode): TreeSitterNode[] {
   return Array.from({ length: node.namedChildCount }, (_, index) => node.namedChild(index)).filter(
     (child): child is TreeSitterNode => child !== null,
   );
+}
+
+function hasDirectChildType(node: TreeSitterNode, type: string): boolean {
+  return children(node).some((child) => child.type === type);
 }
 
 function spanFromNode(node: TreeSitterNode): SourceSpan {
@@ -78,21 +91,18 @@ function argvFromCommand(node: TreeSitterNode, nameNode: TreeSitterNode): string
 }
 
 function recordShape(node: TreeSitterNode, output: MutableExplanation): void {
-  if ((node.type === "program" || node.type === "list") && node.text.includes(";")) {
+  if ((node.type === "program" || node.type === "list") && hasDirectChildType(node, ";")) {
     output.shapes.add("sequence");
   }
   if (node.type === "pipeline") {
     output.shapes.add("pipeline");
   }
   if (node.type === "list") {
-    if (node.text.includes("&&")) {
+    if (hasDirectChildType(node, "&&")) {
       output.shapes.add("and");
     }
-    if (node.text.includes("||")) {
+    if (hasDirectChildType(node, "||")) {
       output.shapes.add("or");
-    }
-    if (node.text.includes(";")) {
-      output.shapes.add("sequence");
     }
   }
   if (node.type === "if_statement") {
@@ -115,6 +125,28 @@ function recordShape(node: TreeSitterNode, output: MutableExplanation): void {
   }
 }
 
+function shellCommandFlag(
+  argv: string[],
+  startIndex: number,
+): { flag: string; index: number } | null {
+  for (let index = startIndex; index < argv.length; index += 1) {
+    const token = argv[index]?.trim();
+    if (!token) {
+      continue;
+    }
+    if (token === "--") {
+      break;
+    }
+    if (token === "-c") {
+      return { flag: token, index };
+    }
+    if (token.startsWith("-") && !token.startsWith("--") && token.slice(1).includes("c")) {
+      return { flag: token, index };
+    }
+  }
+  return null;
+}
+
 function recordCommandRisks(
   argv: string[],
   text: string,
@@ -125,6 +157,7 @@ function recordCommandRisks(
   if (!executable) {
     return;
   }
+  const normalizedExecutable = normalizeExecutableToken(executable);
   const inlineEval = detectInterpreterInlineEvalArgv(argv);
   if (inlineEval) {
     output.risks.push({
@@ -136,14 +169,14 @@ function recordCommandRisks(
     });
   }
 
-  if (["bash", "sh", "zsh", "dash"].includes(executable)) {
-    const flagIndex = argv.findIndex((arg) => arg === "-c" || arg === "-lc");
-    const payload = flagIndex >= 0 ? argv[flagIndex + 1] : undefined;
-    if (payload) {
+  if (SHELL_EXECUTABLES.has(normalizedExecutable)) {
+    const commandFlag = shellCommandFlag(argv, 1);
+    const payload = commandFlag ? argv[commandFlag.index + 1] : undefined;
+    if (commandFlag && payload) {
       output.risks.push({
         kind: "shell-wrapper",
         executable,
-        flag: argv[flagIndex] ?? "-c",
+        flag: commandFlag.flag,
         payload,
         text,
         span,
@@ -151,25 +184,29 @@ function recordCommandRisks(
     }
   }
 
-  if (executable === "find") {
+  if (normalizedExecutable === "find") {
     const flag = argv.find((arg) => ["-exec", "-execdir", "-ok", "-okdir"].includes(arg));
     if (flag) {
       output.risks.push({ kind: "command-carrier", command: executable, flag, text, span });
     }
   }
-  if (executable === "xargs") {
-    output.risks.push({ kind: "command-carrier", command: executable, text, span });
+  if (normalizedExecutable === "xargs") {
+    output.risks.push({ kind: "command-carrier", command: normalizedExecutable, text, span });
   }
-  if (executable === "eval") {
+  if (normalizedExecutable === "eval") {
     output.risks.push({ kind: "eval", text, span });
   }
-  if (["sudo", "doas", "env"].includes(executable)) {
-    const shellIndex = argv.findIndex((arg) => ["bash", "sh", "zsh", "dash"].includes(arg));
-    if (
-      shellIndex >= 0 &&
-      argv.slice(shellIndex + 1).some((arg) => arg === "-c" || arg === "-lc")
-    ) {
-      output.risks.push({ kind: "shell-wrapper-through-carrier", command: executable, text, span });
+  if (["sudo", "doas", "env"].includes(normalizedExecutable)) {
+    const shellIndex = argv.findIndex((arg) =>
+      SHELL_EXECUTABLES.has(normalizeExecutableToken(arg)),
+    );
+    if (shellIndex >= 0 && shellCommandFlag(argv, shellIndex + 1)) {
+      output.risks.push({
+        kind: "shell-wrapper-through-carrier",
+        command: normalizedExecutable,
+        text,
+        span,
+      });
     }
   }
 }
@@ -189,7 +226,7 @@ function walk(node: TreeSitterNode, output: MutableExplanation, context: Command
     output.risks.push({ kind: "heredoc", text: node.text, span });
   } else if (node.type === "herestring_redirect") {
     output.risks.push({ kind: "here-string", text: node.text, span });
-  } else if (node.type === "file_redirect" || node.type === "redirected_statement") {
+  } else if (node.type === "file_redirect") {
     output.risks.push({ kind: "redirect", text: node.text, span });
   } else if (node.type === "ERROR") {
     output.risks.push({ kind: "syntax-error", text: node.text, span });

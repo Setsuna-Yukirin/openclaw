@@ -108,6 +108,16 @@ describe("command explainer tree-sitter runtime", () => {
         text: 'bash -lc "echo hi | wc -c"',
       }),
     );
+
+    const combinedFlags = await explainShellCommand('bash -euxc "echo hi"');
+    expect(combinedFlags.risks).toContainEqual(
+      expect.objectContaining({
+        kind: "shell-wrapper",
+        executable: "bash",
+        flag: "-euxc",
+        payload: "echo hi",
+      }),
+    );
   });
 
   it("detects command carriers", async () => {
@@ -130,11 +140,25 @@ describe("command explainer tree-sitter runtime", () => {
     expect(sudoShell.risks).toContainEqual(
       expect.objectContaining({ kind: "shell-wrapper-through-carrier", command: "sudo" }),
     );
+
+    const sudoCombinedFlags = await explainShellCommand('sudo bash -euxc "id && whoami"');
+    expect(sudoCombinedFlags.risks).toContainEqual(
+      expect.objectContaining({ kind: "shell-wrapper-through-carrier", command: "sudo" }),
+    );
+  });
+
+  it("does not treat literal operator text as command shapes", async () => {
+    const quotedSemicolon = await explainShellCommand('echo ";"');
+    expect(quotedSemicolon.shapes).not.toContain("sequence");
+
+    const heredoc = await explainShellCommand("cat <<EOF\n;\nEOF");
+    expect(heredoc.shapes).not.toContain("sequence");
   });
 
   it("marks redirects heredocs and here-strings as risks", async () => {
     const redirect = await explainShellCommand("echo hi > out.txt");
-    expect(redirect.risks).toContainEqual(expect.objectContaining({ kind: "redirect" }));
+    const redirectRisks = redirect.risks.filter((risk) => risk.kind === "redirect");
+    expect(redirectRisks).toEqual([expect.objectContaining({ text: "> out.txt" })]);
 
     const heredoc = await explainShellCommand("cat <<EOF\nhello\nEOF");
     expect(heredoc.risks).toContainEqual(expect.objectContaining({ kind: "heredoc" }));
