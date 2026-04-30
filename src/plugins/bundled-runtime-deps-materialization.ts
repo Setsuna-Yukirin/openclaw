@@ -52,42 +52,17 @@ function sameRuntimeDepSpecs(left: readonly string[], right: readonly string[]):
   );
 }
 
-function readInstalledRuntimeDepPackage(
-  rootDir: string,
-  depName: string,
-): { packageDir: string; packageJson: JsonObject } | null {
+function readInstalledRuntimeDepPackage(rootDir: string, depName: string): JsonObject | null {
   try {
     const packageJsonPath = resolveDependencySentinelAbsolutePath(rootDir, depName);
     const parsed = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return null;
     }
-    return { packageDir: path.dirname(packageJsonPath), packageJson: parsed as JsonObject };
+    return parsed as JsonObject;
   } catch {
     return null;
   }
-}
-
-function hasInstalledRuntimeDepEntryFiles(packageDir: string, packageJson: JsonObject): boolean {
-  const main = packageJson.main;
-  if (typeof main !== "string" || main.trim() === "") {
-    return true;
-  }
-  const mainPath = path.resolve(packageDir, main);
-  if (mainPath !== packageDir && !mainPath.startsWith(`${packageDir}${path.sep}`)) {
-    return false;
-  }
-  if (fs.existsSync(mainPath)) {
-    return true;
-  }
-  return (
-    fs.existsSync(`${mainPath}.js`) ||
-    fs.existsSync(`${mainPath}.json`) ||
-    fs.existsSync(`${mainPath}.node`) ||
-    fs.existsSync(path.join(mainPath, "index.js")) ||
-    fs.existsSync(path.join(mainPath, "index.json")) ||
-    fs.existsSync(path.join(mainPath, "index.node"))
-  );
 }
 
 export function isRuntimeDepSatisfied(
@@ -98,12 +73,9 @@ export function isRuntimeDepSatisfied(
   if (!installed) {
     return false;
   }
-  const version = installed.packageJson.version;
+  const version = installed.version;
   return Boolean(
-    typeof version === "string" &&
-    version.trim() &&
-    satisfies(version.trim(), dep.version) &&
-    hasInstalledRuntimeDepEntryFiles(installed.packageDir, installed.packageJson),
+    typeof version === "string" && version.trim() && satisfies(version.trim(), dep.version),
   );
 }
 
