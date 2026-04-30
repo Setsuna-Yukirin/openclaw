@@ -1762,10 +1762,12 @@
         "semver",
         "sqlite-vec",
         "tar",
+        "tree-sitter-bash",
         "tslog",
         "typebox",
         "undici",
         "web-push",
+        "web-tree-sitter",
         "ws",
         "yaml",
         "zod"
