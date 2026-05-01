@@ -30,6 +30,11 @@ type ProviderRuntimePluginLookupParams = {
   installBundledRuntimeDeps?: boolean;
 };
 
+type ProviderPluginsForHooksResult = {
+  plugins: ProviderPlugin[];
+  loadInFlight: boolean;
+};
+
 function matchesProviderId(provider: ProviderPlugin, providerId: string): boolean {
   const normalized = normalizeProviderId(providerId);
   if (!normalized) {
@@ -86,6 +91,20 @@ export function resolveProviderPluginsForHooks(params: {
   bundledProviderVitestCompat?: boolean;
   installBundledRuntimeDeps?: boolean;
 }): ProviderPlugin[] {
+  return resolveProviderPluginsForHooksWithState(params).plugins;
+}
+
+function resolveProviderPluginsForHooksWithState(params: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  onlyPluginIds?: string[];
+  providerRefs?: string[];
+  applyAutoEnable?: boolean;
+  bundledProviderAllowlistCompat?: boolean;
+  bundledProviderVitestCompat?: boolean;
+  installBundledRuntimeDeps?: boolean;
+}): ProviderPluginsForHooksResult {
   const env = params.env ?? process.env;
   const workspaceDir = params.workspaceDir ?? getActivePluginRegistryWorkspaceDirFromState();
   if (
@@ -100,7 +119,7 @@ export function resolveProviderPluginsForHooks(params: {
       installBundledRuntimeDeps: params.installBundledRuntimeDeps,
     })
   ) {
-    return [];
+    return { plugins: [], loadInFlight: true };
   }
   const resolved = resolvePluginProviders({
     ...params,
@@ -112,7 +131,7 @@ export function resolveProviderPluginsForHooks(params: {
     bundledProviderVitestCompat: params.bundledProviderVitestCompat ?? true,
     installBundledRuntimeDeps: params.installBundledRuntimeDeps,
   });
-  return resolved;
+  return { plugins: resolved, loadInFlight: false };
 }
 
 export function resolveProviderRuntimePlugin(
@@ -127,7 +146,7 @@ export function resolveProviderRuntimePlugin(
     provider: params.provider,
     config: params.config,
   });
-  const plugin = resolveProviderPluginsForHooks({
+  const resolved = resolveProviderPluginsForHooksWithState({
     config: params.config,
     workspaceDir: params.workspaceDir ?? getActivePluginRegistryWorkspaceDirFromState(),
     env: params.env,
@@ -136,7 +155,8 @@ export function resolveProviderRuntimePlugin(
     bundledProviderAllowlistCompat: params.bundledProviderAllowlistCompat,
     bundledProviderVitestCompat: params.bundledProviderVitestCompat,
     installBundledRuntimeDeps: params.installBundledRuntimeDeps,
-  }).find((plugin) => {
+  });
+  const plugin = resolved.plugins.find((plugin) => {
     if (apiOwnerHint) {
       return (
         matchesProviderLiteralId(plugin, params.provider) || matchesProviderId(plugin, apiOwnerHint)
@@ -144,7 +164,9 @@ export function resolveProviderRuntimePlugin(
     }
     return matchesProviderId(plugin, params.provider);
   });
-  cache?.set(cacheKey, plugin ?? null);
+  if (!resolved.loadInFlight) {
+    cache?.set(cacheKey, plugin ?? null);
+  }
   return plugin;
 }
 
