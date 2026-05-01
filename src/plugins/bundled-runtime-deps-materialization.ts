@@ -52,17 +52,50 @@ function sameRuntimeDepSpecs(left: readonly string[], right: readonly string[]):
   );
 }
 
-function readInstalledRuntimeDepPackage(rootDir: string, depName: string): JsonObject | null {
+function readInstalledRuntimeDepPackage(
+  rootDir: string,
+  depName: string,
+): { packageDir: string; packageJson: JsonObject } | null {
   try {
     const packageJsonPath = resolveDependencySentinelAbsolutePath(rootDir, depName);
     const parsed = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return null;
     }
-    return parsed as JsonObject;
+    return { packageDir: path.dirname(packageJsonPath), packageJson: parsed as JsonObject };
   } catch {
     return null;
   }
+}
+
+function hasRuntimeDepEntryFile(packageDir: string, rawEntry: string): boolean {
+  const entry = rawEntry.trim();
+  if (entry === "") {
+    return true;
+  }
+  const entryPath = path.resolve(packageDir, entry);
+  if (entryPath !== packageDir && !entryPath.startsWith(`${packageDir}${path.sep}`)) {
+    return false;
+  }
+  if (fs.existsSync(entryPath)) {
+    return true;
+  }
+  return (
+    fs.existsSync(`${entryPath}.js`) ||
+    fs.existsSync(`${entryPath}.json`) ||
+    fs.existsSync(`${entryPath}.node`) ||
+    fs.existsSync(path.join(entryPath, "index.js")) ||
+    fs.existsSync(path.join(entryPath, "index.json")) ||
+    fs.existsSync(path.join(entryPath, "index.node"))
+  );
+}
+
+function hasInstalledRuntimeDepEntryFiles(packageDir: string, packageJson: JsonObject): boolean {
+  const main = packageJson.main;
+  if (typeof main === "string") {
+    return hasRuntimeDepEntryFile(packageDir, main);
+  }
+  return true;
 }
 
 function isRuntimeDepSatisfied(rootDir: string, dep: { name: string; version: string }): boolean {
@@ -70,9 +103,12 @@ function isRuntimeDepSatisfied(rootDir: string, dep: { name: string; version: st
   if (!installed) {
     return false;
   }
-  const version = installed.version;
+  const version = installed.packageJson.version;
   return Boolean(
-    typeof version === "string" && version.trim() && satisfies(version.trim(), dep.version),
+    typeof version === "string" &&
+    version.trim() &&
+    satisfies(version.trim(), dep.version) &&
+    hasInstalledRuntimeDepEntryFiles(installed.packageDir, installed.packageJson),
   );
 }
 
