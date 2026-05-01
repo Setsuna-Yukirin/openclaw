@@ -13,12 +13,9 @@ import {
 const DEFAULT_UNKNOWN_RUNTIME_DEPS_ROOTS_TO_KEEP = 20;
 const DEFAULT_UNKNOWN_RUNTIME_DEPS_MIN_AGE_MS = 10 * 60_000;
 
-export type BundledRuntimeDepsInstallRoot = {
+export type BundledRuntimeDepsInstallRootPlan = {
   installRoot: string;
   external: boolean;
-};
-
-export type BundledRuntimeDepsInstallRootPlan = BundledRuntimeDepsInstallRoot & {
   searchRoots: string[];
 };
 
@@ -189,13 +186,6 @@ export function pruneUnknownBundledRuntimeDepsRoots(
   return { scanned, removed, skippedLocked };
 }
 
-function resolveExternalBundledRuntimeDepsInstallRoot(params: {
-  pluginRoot: string;
-  env: NodeJS.ProcessEnv;
-}): string {
-  return resolveExternalBundledRuntimeDepsInstallRoots(params).at(-1)!;
-}
-
 function resolveExternalBundledRuntimeDepsInstallRoots(params: {
   pluginRoot: string;
   env: NodeJS.ProcessEnv;
@@ -281,12 +271,7 @@ export function resolveBundledRuntimeDependencyPackageInstallRootPlan(
     !isSourceCheckoutRoot(packageRoot)
   ) {
     return createBundledRuntimeDepsInstallRootPlan({
-      installRoot:
-        externalRoots.at(-1) ??
-        resolveExternalBundledRuntimeDepsInstallRoot({
-          pluginRoot: path.join(packageRoot, "dist", "extensions", "__package__"),
-          env,
-        }),
+      installRoot: externalRoots.at(-1)!,
       searchRoots: externalRoots,
       external: true,
     });
@@ -299,12 +284,7 @@ export function resolveBundledRuntimeDependencyPackageInstallRootPlan(
     });
   }
   return createBundledRuntimeDepsInstallRootPlan({
-    installRoot:
-      externalRoots.at(-1) ??
-      resolveExternalBundledRuntimeDepsInstallRoot({
-        pluginRoot: path.join(packageRoot, "dist", "extensions", "__package__"),
-        env,
-      }),
+    installRoot: externalRoots.at(-1)!,
     searchRoots: externalRoots,
     external: true,
   });
@@ -330,12 +310,7 @@ export function resolveBundledRuntimeDependencyInstallRootPlan(
     isPackagedBundledPluginRoot(pluginRoot)
   ) {
     return createBundledRuntimeDepsInstallRootPlan({
-      installRoot:
-        externalRoots.at(-1) ??
-        resolveExternalBundledRuntimeDepsInstallRoot({
-          pluginRoot,
-          env,
-        }),
+      installRoot: externalRoots.at(-1)!,
       searchRoots: externalRoots,
       external: true,
     });
@@ -348,12 +323,7 @@ export function resolveBundledRuntimeDependencyInstallRootPlan(
     });
   }
   return createBundledRuntimeDepsInstallRootPlan({
-    installRoot:
-      externalRoots.at(-1) ??
-      resolveExternalBundledRuntimeDepsInstallRoot({
-        pluginRoot,
-        env,
-      }),
+    installRoot: externalRoots.at(-1)!,
     searchRoots: externalRoots,
     external: true,
   });
@@ -364,18 +334,4 @@ export function resolveBundledRuntimeDependencyInstallRoot(
   options: { env?: NodeJS.ProcessEnv; forceExternal?: boolean } = {},
 ): string {
   return resolveBundledRuntimeDependencyInstallRootPlan(pluginRoot, options).installRoot;
-}
-
-export function resolveBundledRuntimeDependencyInstallRootInfo(
-  pluginRoot: string,
-  options: { env?: NodeJS.ProcessEnv; forceExternal?: boolean } = {},
-): BundledRuntimeDepsInstallRoot {
-  const { installRoot, external } = resolveBundledRuntimeDependencyInstallRootPlan(
-    pluginRoot,
-    options,
-  );
-  return {
-    installRoot,
-    external,
-  };
 }

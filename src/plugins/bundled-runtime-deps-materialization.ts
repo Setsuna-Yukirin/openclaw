@@ -12,7 +12,7 @@ import { satisfies } from "./semver.runtime.js";
 
 const LEGACY_RETAINED_RUNTIME_DEPS_MANIFEST = ".openclaw-runtime-deps.json";
 
-export function readGeneratedInstallManifestSpecs(installRoot: string): string[] | null {
+function readGeneratedInstallManifestSpecs(installRoot: string): string[] | null {
   const parsed = readRuntimeDepsJsonObject(path.join(installRoot, "package.json"));
   if (parsed?.name !== "openclaw-runtime-deps-install") {
     return null;
@@ -65,10 +65,7 @@ function readInstalledRuntimeDepPackage(rootDir: string, depName: string): JsonO
   }
 }
 
-export function isRuntimeDepSatisfied(
-  rootDir: string,
-  dep: { name: string; version: string },
-): boolean {
+function isRuntimeDepSatisfied(rootDir: string, dep: { name: string; version: string }): boolean {
   const installed = readInstalledRuntimeDepPackage(rootDir, dep.name);
   if (!installed) {
     return false;
