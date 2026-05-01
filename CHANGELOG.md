@@ -11,6 +11,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Auto-reply/group chats: keep the `message` tool available for message-tool-only visible replies and apply group-scoped tool policy before deciding fallback delivery, so Discord/Slack-style rooms reply visibly in the correct channel after upgrades. Fixes #74842; refs #75207. Thanks @davelutztx and @aa-on-ai.
 - Agents/commitments: keep inferred follow-ups internal when heartbeat target is none, strip raw source text from stored commitments, disable tools during due-commitment heartbeat turns, bound hidden extraction queue growth, expire stale commitments, and add QA/Docker safety coverage. Thanks @vignesh07.
 - Agents/commitments: run hidden follow-up extraction on the configured agent/default model instead of falling back to direct OpenAI, so OpenAI Codex OAuth-only gateways no longer spam background API-key failures. Fixes #75334. Thanks @sene1337.
 - Agents/media: keep async music generation completions on the requester-session wake path even when direct-send completion is enabled, so finished audio stays agent-mediated while video can still opt into direct channel delivery. (#75335) Thanks @vincentkoc.
