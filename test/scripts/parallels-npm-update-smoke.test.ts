@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { windowsUpdateScript } from "../../scripts/e2e/parallels/npm-update-scripts.ts";
 
 const SCRIPT_PATH = "scripts/e2e/parallels/npm-update-smoke.ts";
 const UPDATE_SCRIPTS_PATH = "scripts/e2e/parallels/npm-update-scripts.ts";
+const TEST_AUTH = {
+  authChoice: "openai",
+  authKeyFlag: "--openai-api-key",
+  apiKeyEnv: "OPENAI_API_KEY",
+  apiKeyValue: "test-key",
+  modelId: "gpt-5.4",
+};
 
 describe("parallels npm update smoke", () => {
   it("does not leave guard/server children attached to the wrapper", () => {
@@ -48,5 +56,25 @@ describe("parallels npm update smoke", () => {
       "OPENCLAW_DISABLE_BUNDLED_PLUGINS=1 /opt/homebrew/bin/openclaw gateway stop",
     );
     expect(script).toContain("OPENCLAW_DISABLE_BUNDLED_PLUGINS=1 openclaw gateway stop");
+  });
+
+  it("generates a valid Windows stale import regex", () => {
+    const script = windowsUpdateScript({
+      auth: TEST_AUTH,
+      expectedNeedle: "2026.4.30",
+      updateTarget: "latest",
+    });
+    const staleImportMatch = script.match(/\$updateText -match '(node_modules[^']+)'/);
+    const staleImportPattern = staleImportMatch?.[1];
+
+    if (!staleImportPattern) {
+      throw new Error("missing generated Windows stale import regex");
+    }
+    expect(staleImportPattern).toBe(
+      String.raw`node_modules\\openclaw\\dist\\[^\\]+-[A-Za-z0-9_-]+\.js`,
+    );
+    expect(
+      new RegExp(staleImportPattern).test(String.raw`node_modules\openclaw\dist\main-a1_B2.js`),
+    ).toBe(true);
   });
 });
