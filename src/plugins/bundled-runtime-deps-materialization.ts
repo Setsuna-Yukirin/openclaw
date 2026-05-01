@@ -159,6 +159,54 @@ export function removeLegacyRuntimeDepsManifest(installRoot: string): void {
   });
 }
 
+export function removeRuntimeDepsNodeModulesSymlink(installRoot: string): boolean {
+  const nodeModulesPath = path.join(installRoot, "node_modules");
+  try {
+    if (!fs.lstatSync(nodeModulesPath).isSymbolicLink()) {
+      return false;
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+  fs.unlinkSync(nodeModulesPath);
+  return true;
+}
+
+export function linkRuntimeDepsNodeModulesFromRoot(params: {
+  sourceRoot: string;
+  targetRoot: string;
+}): boolean {
+  const sourceNodeModules = path.join(params.sourceRoot, "node_modules");
+  const targetNodeModules = path.join(params.targetRoot, "node_modules");
+  if (path.resolve(sourceNodeModules) === path.resolve(targetNodeModules)) {
+    return true;
+  }
+  let sourceStat: fs.Stats;
+  try {
+    sourceStat = fs.lstatSync(sourceNodeModules);
+  } catch {
+    return false;
+  }
+  if (!sourceStat.isDirectory() || sourceStat.isSymbolicLink()) {
+    return false;
+  }
+  try {
+    fs.lstatSync(targetNodeModules);
+    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+  fs.mkdirSync(params.targetRoot, { recursive: true });
+  const linkType = process.platform === "win32" ? "junction" : "dir";
+  fs.symlinkSync(sourceNodeModules, targetNodeModules, linkType);
+  return true;
+}
+
 function createNpmInstallExecutionManifest(installSpecs: readonly string[]): JsonObject {
   const dependencies: Record<string, string> = {};
   for (const spec of installSpecs) {
