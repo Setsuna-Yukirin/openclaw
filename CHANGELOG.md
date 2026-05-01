@@ -11,6 +11,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Plugins/runtime-deps: recover interrupted bundled runtime-dependency installs whose package sentinels exist but generated materialization is incomplete, forcing npm/pnpm repair in Gateway startup, doctor, and lazy plugin loads instead of leaving channels crash-looping on missing packages. Fixes #75309; refs #75310, #75296, and #75304. Thanks @scottgl9.
 - Plugins/runtime-deps: keep runtime inspection and channel maintenance commands from downloading bundled plugin dependencies, route explicit repairs through `openclaw plugins deps --repair`, and still allow Gateway/DO paths to repair missing deps before import. Refs #75069. Thanks @xiaohuaxi.
 - Agents/tool-result guard: use the resolved runtime context token budget for non-context-engine tool-result overflow checks, so long tool-heavy sessions no longer compact early when `contextTokens` is larger than native `contextWindow`. Fixes #74917. Thanks @kAIborg24.
 - Gateway/systemd: exit with sysexits 78 for supervised lock and `EADDRINUSE` conflicts so `RestartPreventExitStatus=78` stops `Restart=always` restart loops instead of repeatedly reloading plugins against an occupied port. Fixes #75115. Thanks @yhyatt.
