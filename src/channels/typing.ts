@@ -45,7 +45,19 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
     },
   });
 
-  const fireStart = () => {
+  const handleStartSettled = (handle: StartHandle, result: StartResult) => {
+    pendingStarts.delete(handle);
+    if (closed) {
+      // Persistent indicators can record their removable state only after start resolves.
+      if (result === "started" && stopRequestedDuringPendingStart) {
+        sendStop(true);
+      }
+      return false;
+    }
+    return true;
+  };
+
+  const fireStart = (onSettled?: (result: StartResult, shouldContinue: boolean) => void) => {
     const handle: StartHandle = {
       pending: true,
       promise: Promise.resolve("skipped" as StartResult),
@@ -62,6 +74,10 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
         handle.pending = false;
       });
     pendingStarts.add(handle);
+    void handle.promise.then((result) => {
+      const shouldContinue = handleStartSettled(handle, result);
+      onSettled?.(result, shouldContinue);
+    });
     return handle;
   };
 
@@ -101,14 +117,8 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
     startGuard.reset();
     keepaliveLoop.stop();
     clearTtlTimer();
-    const startHandle = fireStart();
-    void startHandle.promise.then((result) => {
-      pendingStarts.delete(startHandle);
-      if (closed) {
-        // Persistent indicators can record their removable state only after start resolves.
-        if (result === "started" && stopRequestedDuringPendingStart) {
-          sendStop(true);
-        }
+    fireStart((_, shouldContinue) => {
+      if (!shouldContinue) {
         return;
       }
       if (closed || startGuard.isTripped()) {
