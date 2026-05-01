@@ -25,8 +25,15 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
   const keepaliveIntervalMs = params.keepaliveIntervalMs ?? 3_000;
   const maxConsecutiveFailures = Math.max(1, params.maxConsecutiveFailures ?? 2);
   const maxDurationMs = params.maxDurationMs ?? 60_000; // Default 60s TTL
+  type StartResult = "started" | "skipped" | "failed" | "tripped";
+  type StartHandle = {
+    pending: boolean;
+    promise: Promise<StartResult>;
+  };
   let stopSent = false;
   let closed = false;
+  const pendingStarts = new Set<StartHandle>();
+  let stopRequestedDuringPendingStart = false;
   let ttlTimer: ReturnType<typeof setTimeout> | undefined;
 
   const startGuard = createTypingStartGuard({
@@ -38,13 +45,31 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
     },
   });
 
-  const fireStart = async (): Promise<void> => {
-    await startGuard.run(() => params.start());
+  const fireStart = () => {
+    const handle: StartHandle = {
+      pending: true,
+      promise: Promise.resolve("skipped" as StartResult),
+    };
+    handle.promise = startGuard
+      .run(async () => {
+        try {
+          await params.start();
+        } finally {
+          handle.pending = false;
+        }
+      })
+      .finally(() => {
+        handle.pending = false;
+      });
+    pendingStarts.add(handle);
+    return handle;
   };
 
   const keepaliveLoop = createTypingKeepaliveLoop({
     intervalMs: keepaliveIntervalMs,
-    onTick: fireStart,
+    onTick: async () => {
+      await fireStart().promise;
+    },
   });
 
   // TTL safety: auto-stop typing after maxDurationMs
@@ -76,8 +101,16 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
     startGuard.reset();
     keepaliveLoop.stop();
     clearTtlTimer();
-    const startPromise = fireStart();
-    void startPromise.then(() => {
+    const startHandle = fireStart();
+    void startHandle.promise.then((result) => {
+      pendingStarts.delete(startHandle);
+      if (closed) {
+        // Persistent indicators can record their removable state only after start resolves.
+        if (result === "started" && stopRequestedDuringPendingStart) {
+          sendStop(true);
+        }
+        return;
+      }
       if (closed || startGuard.isTripped()) {
         return;
       }
@@ -87,15 +120,22 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
     await Promise.resolve();
   };
 
-  const fireStop = () => {
-    closed = true;
-    keepaliveLoop.stop();
-    clearTtlTimer(); // Clear TTL timer on normal stop
-    if (!stop || stopSent) {
+  const sendStop = (allowDuplicate = false) => {
+    if (!stop || (stopSent && !allowDuplicate)) {
       return;
     }
     stopSent = true;
     void stop().catch((err) => (params.onStopError ?? params.onStartError)(err));
+  };
+
+  const fireStop = () => {
+    if ([...pendingStarts].some((start) => start.pending)) {
+      stopRequestedDuringPendingStart = true;
+    }
+    closed = true;
+    keepaliveLoop.stop();
+    clearTtlTimer(); // Clear TTL timer on normal stop
+    sendStop();
   };
 
   return { onReplyStart, onIdle: fireStop, onCleanup: fireStop };

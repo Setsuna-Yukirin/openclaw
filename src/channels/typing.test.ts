@@ -195,6 +195,41 @@ describe("createTypingCallbacks", () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  it("sends stop again when cleanup runs before a pending start settles", async () => {
+    let resolveStart!: () => void;
+    let startCompleted = false;
+    let stopsAfterStart = 0;
+    const { stop, callbacks } = createTypingHarness({
+      start: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveStart = () => {
+              startCompleted = true;
+              resolve();
+            };
+          }),
+      ),
+      stop: vi.fn(async () => {
+        if (startCompleted) {
+          stopsAfterStart += 1;
+        }
+      }),
+    });
+
+    await callbacks.onReplyStart();
+    callbacks.onCleanup?.();
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(stopsAfterStart).toBe(0);
+
+    resolveStart();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(stop).toHaveBeenCalledTimes(2);
+    expect(stopsAfterStart).toBe(1);
+  });
+
   it("does not restart keepalive after idle cleanup", async () => {
     await withFakeTimers(async () => {
       const { start, stop, callbacks } = createTypingHarness();
