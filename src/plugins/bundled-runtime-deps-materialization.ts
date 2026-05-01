@@ -43,13 +43,12 @@ function readPackageRuntimeDepSpecs(packageRoot: string): string[] | null {
   return normalizeRuntimeDepSpecs(specs);
 }
 
-function sameRuntimeDepSpecs(left: readonly string[], right: readonly string[]): boolean {
-  const normalizedLeft = normalizeRuntimeDepSpecs(left);
-  const normalizedRight = normalizeRuntimeDepSpecs(right);
-  return (
-    normalizedLeft.length === normalizedRight.length &&
-    normalizedLeft.every((entry, index) => entry === normalizedRight[index])
-  );
+function runtimeDepSpecsIncludeAll(
+  availableSpecs: readonly string[],
+  requestedSpecs: readonly string[],
+): boolean {
+  const available = new Set(normalizeRuntimeDepSpecs(availableSpecs));
+  return normalizeRuntimeDepSpecs(requestedSpecs).every((spec) => available.has(spec));
 }
 
 function readInstalledRuntimeDepPackage(
@@ -134,8 +133,9 @@ export function isRuntimeDepsPlanMaterialized(
     generatedManifestSpecs !== null ? null : readPackageRuntimeDepSpecs(installRoot);
   return (
     ((generatedManifestSpecs !== null &&
-      sameRuntimeDepSpecs(generatedManifestSpecs, installSpecs)) ||
-      (packageManifestSpecs !== null && sameRuntimeDepSpecs(packageManifestSpecs, installSpecs))) &&
+      runtimeDepSpecsIncludeAll(generatedManifestSpecs, installSpecs)) ||
+      (packageManifestSpecs !== null &&
+        runtimeDepSpecsIncludeAll(packageManifestSpecs, installSpecs))) &&
     hasSatisfiedInstallSpecPackages(installRoot, installSpecs)
   );
 }
